@@ -1,9 +1,10 @@
 """
 tests/conftest.py
 """
+import os
 
 import pytest
-
+os.environ["RASA_RAG_TOKEN"] = "unit-test-token"
 
 class DummyDoc:
     def __init__(self, page_content="content", metadata=None):

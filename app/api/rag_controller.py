@@ -23,6 +23,11 @@ from fastapi.security import APIKeyHeader
 service_token_header = APIKeyHeader(name="X-Service-Token")
 router = APIRouter()
 
+EXPECTED_RAG_TOKEN = os.getenv("RASA_RAG_TOKEN")
+
+if not EXPECTED_RAG_TOKEN or not EXPECTED_RAG_TOKEN.strip():
+    raise RuntimeError("RASA_RAG_TOKEN must be configured")
+
 GRADE_ALIASES = {
     "efm": ["efm", "manager", "enseignant formateur manager"],
     "efs": ["efs", "senior", "enseignant formateur senior"],
@@ -33,17 +38,10 @@ GRADE_ALIASES = {
     "elcc": ["elcc", "enseignant de langue"],
 }
 
-def get_expected_token():
-    token = os.getenv("RASA_RAG_TOKEN")
-    if not token:
-        raise HTTPException(status_code=500, detail="RASA_RAG_TOKEN must be configured")
-    return token
-
 def verify_rasa_service(token: str = Depends(service_token_header)):
 
-    expected_token = get_expected_token()
-    print(f"RASA_RAG_TOKEN: {expected_token}")
-    if not secrets.compare_digest(token, expected_token):
+    print(f"RASA_RAG_TOKEN: {EXPECTED_RAG_TOKEN}")
+    if not secrets.compare_digest(token, EXPECTED_RAG_TOKEN):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 class RAGRequest(BaseModel):
@@ -62,9 +60,6 @@ async def get_context(request: RAGRequest, _authenticated: None = Depends(verify
     filename, context_text = load_lang_chain_context(request.question, request.domains, request.grades, request.nbr_chunks)
     print("######################## WELCOME to LANGCHAIN 3")
 
-    expected_token = get_expected_token()
-    if not expected_token:
-        context_text = "RASA_RAG_TOKEN_NOT_EXIST"
     return RAGResponse(answer=context_text, source_file=filename)
 
 def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunks:int):

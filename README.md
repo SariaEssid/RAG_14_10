@@ -3,8 +3,6 @@
 ## 🧠 Overview
 `langchain-rag-service` is a Retrieval-Augmented Generation (RAG) microservice built using FastAPI and LangChain.
 
-It provides intelligent knowledge-based answers by retrieving information from markdown documents using vector search and Large Language Models (LLMs).
-
 This service is designed to work as an external Knowledge Engine for conversational platforms such as Rasa chatbot systems.
 
 ---

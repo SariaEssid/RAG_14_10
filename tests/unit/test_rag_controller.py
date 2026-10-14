@@ -82,21 +82,21 @@ def test_detect_grades_no_match():
 def test_detect_domain_from_grades_ef():
     result = detect_domain_from_grades(["efa"])
 
-    assert result == "ef"
+    assert result == ["ef"]
 
 
 
 def test_detect_domain_from_grades_elcc():
     result = detect_domain_from_grades(["elcc1"])
 
-    assert result == "elcc"
+    assert result == ["elcc"]
 
 
 
 def test_detect_domain_from_grades_none():
     result = detect_domain_from_grades(["other"])
 
-    assert result is None
+    assert result == []
 
 
 
@@ -214,18 +214,19 @@ def test_empty_context_branch():
     assert filename == "empty"
 
 def test_get_context_endpoint():
-    with patch(
+    with patch("app.api.rag_controller.EXPECTED_RAG_TOKEN", "test-service-token"), \
+         patch(
         "app.api.rag_controller.load_lang_chain_context",
         return_value=("file.md", "context")
     ):
 
         response = client.post(
             "/rag/context",
+            headers={"X-Service-Token": "test-service-token"},
             json={
                 "question": "hello",
                 "domains": [],
                 "grades": [],
-                "specialities": [],
                 "nbr_chunks": 2
             }
         )
@@ -233,3 +234,33 @@ def test_get_context_endpoint():
     assert response.status_code == 200
     assert response.json()["answer"] == "context"
     assert response.json()["source_file"] == "file.md"
+
+
+def test_get_context_endpoint_rejects_missing_service_token():
+    response = client.post(
+        "/rag/context",
+        json={
+            "question": "hello",
+            "domains": [],
+            "grades": [],
+            "nbr_chunks": 2,
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_get_context_endpoint_rejects_invalid_service_token():
+    with patch("app.api.rag_controller.EXPECTED_RAG_TOKEN", "test-service-token"):
+        response = client.post(
+            "/rag/context",
+            headers={"X-Service-Token": "wrong-token"},
+            json={
+                "question": "hello",
+                "domains": [],
+                "grades": [],
+                "nbr_chunks": 2,
+            },
+        )
+
+    assert response.status_code == 401
