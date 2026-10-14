@@ -8,8 +8,6 @@ load_dotenv()  # Must run before os.getenv(...)
 
 import os
 import secrets
-import re
-import unicodedata
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -28,16 +26,6 @@ EXPECTED_RAG_TOKEN = os.getenv("RASA_RAG_TOKEN")
 if not EXPECTED_RAG_TOKEN or not EXPECTED_RAG_TOKEN.strip():
     raise RuntimeError("RASA_RAG_TOKEN must be configured")
 
-GRADE_ALIASES = {
-    "efm": ["efm", "manager", "enseignant formateur manager"],
-    "efs": ["efs", "senior", "enseignant formateur senior"],
-    "efa": ["efa", "associe", "enseignant formateur associe"],
-    "ef": ["ef", "enseignant formateur"],
-    "elcc1": ["elcc1", "classe 1"],
-    "elcc2": ["elcc2", "classe 2"],
-    "elcc": ["elcc", "enseignant de langue"],
-}
-
 def verify_rasa_service(token: str = Depends(service_token_header)):
 
     print(f"RASA_RAG_TOKEN: {EXPECTED_RAG_TOKEN}")
@@ -45,17 +33,17 @@ def verify_rasa_service(token: str = Depends(service_token_header)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 class RAGRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=2000)
     domains: List[str] = Field(default_factory=list)
     grades: List[str] = Field(default_factory=list)
-    nbr_chunks: int
+    nbr_chunks: int = Field(ge=1, le=20)
 
 class RAGResponse(BaseModel):
     answer: str
     source_file: Optional[str] = None  # 💡 Explicitly allows str or None
 
 @router.post("/rag/context", response_model=RAGResponse)
-async def get_context(request: RAGRequest, _authenticated: None = Depends(verify_rasa_service)):
+def get_context(request: RAGRequest, _authenticated: None = Depends(verify_rasa_service)):
     print("💖  💖   💖   💖   💖   💖   💖   💖   💖  💖   💖   💖   💖   💖   💖   💖   💖   💖  💖  💖   💖   💖   💖   💖   💖   💖   💖  WELCOME to LANGCHAIN 1 ")
     filename, context_text = load_lang_chain_context(request.question, request.domains, request.grades, request.nbr_chunks)
     print("######################## WELCOME to LANGCHAIN 3")
@@ -67,11 +55,12 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
 
     index = get_vector_store()  # FAISS vector store
 
+    if index.index.ntotal == 0:
+        return "empty", "Aucun contexte n'est trouvé."
+
     # get top-k docs with scores
     print("######################## WELCOME to LANGCHAIN 2")
-    grades_lol = detect_grades(question)
     print(f"######################## grades_rasa : {grades}")
-    print(f"######################## grades_chain : {grades_lol}")
     print(f"######################## domains : {domains}")
     print(f"######################## nbr chunks : {nbr_chunks}")
 
@@ -87,9 +76,10 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
             )
             docs_with_scores.extend([(doc, 0) for doc in docs])
 
-        domains = detect_domain_from_grades(grades)
+        # domains = detect_domain_from_grades(grades)
         print(f"######################## domains : {domains}")
-        docs_with_scores = get_docs_with_scores(domains, question, index, docs_with_scores)
+        # docs_with_scores = get_docs_with_scores(domains, question, index, docs_with_scores)
+
     elif not grades and domains:
         print("💖 ######################## -GRADE | +DOMAIN")
         for domain in domains:
@@ -101,8 +91,18 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
             docs_with_scores.extend([(doc, 0) for doc in docs])
     else:
         print("💖 ######################## -GRADE | -DOMAIN : " + str(domains))
+
+        total_chunks = index.index.ntotal
+        if total_chunks == 0:
+            return "empty", "Aucun contexte n'est trouvé."
+
+        candidate_k = min(nbr_chunks * 5, total_chunks)
+        raw_docs_with_scores = index.similarity_search_with_score(
+            question, k=candidate_k
+        )
+
         # 1. Fetch the initial results
-        raw_docs_with_scores = index.similarity_search_with_score(question, k=nbr_chunks)
+        # raw_docs_with_scores = index.similarity_search_with_score(question, k=nbr_chunks)
 
         # 2. Filter out documents where page_content starts with "ef"
         docs_with_scores = [
@@ -114,15 +114,32 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
             print(f"Keeping file: {doc.metadata.get('file')}")
 
     contexts = []
-    filename = "empty"
     print("\n💖   💖   💖   Question : " + question)
 
+    # Remove duplicate chunks returned by multiple searches.
+    unique_docs = []
+    seen_chunks = set()
+
+    for doc, score in docs_with_scores:
+        file_name = doc.metadata.get("file", "unknown")
+        normalized_content = " ".join(doc.page_content.split())
+        key = (file_name, normalized_content)
+
+        if key not in seen_chunks:
+            seen_chunks.add(key)
+            unique_docs.append((doc, score))
+
+    docs_with_scores = unique_docs
     if not docs_with_scores:
         print("\n🚨  NO CONTEXT FOUND")
         return "empty", "Aucun context n'est trouvé."
 
+    source_files = list(dict.fromkeys(
+        doc.metadata.get("file", "unknown")
+        for doc, _ in docs_with_scores
+    ))
     for i, (doc, score) in enumerate(docs_with_scores, 1):
-        filename = doc.metadata.get("file", "unknown")
+
         print(f"🔸  🔸  🔸  🔸  🔸  🔸  🔸  🔸  🔸  --- Chunk {i} ---  🔸  🔸  🔸  🔸  🔸  🔸  🔸  🔸  🔸")
         print(f"Score: {score}")
         print("Metadata:", doc.metadata)
@@ -130,67 +147,4 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
         print(doc.page_content + "\n")
         contexts.append(doc.page_content)
 
-    return filename, "\n\n".join(contexts)
-
-def normalize_text(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text.lower())
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
-
-
-def detect_grades(question: str) -> list[str]:
-    normalized_question = f" {normalize_text(question)} "
-    matches = []
-
-    for grade, aliases in GRADE_ALIASES.items():
-        for alias in aliases:
-            normalized_alias = normalize_text(alias)
-            if f" {normalized_alias} " in normalized_question:
-                matches.append((len(normalized_alias), grade))
-
-    if not matches:
-        return []
-
-    longest_match_length = max(length for length, _ in matches)
-    return sorted({
-        grade
-        for length, grade in matches
-        if length == longest_match_length
-    })
-
-def detect_domain_from_grades(grades: list[str]) -> list[str]:
-    domains = []
-
-    if any(grade.lower().startswith("ef") for grade in grades):
-        domains.append("ef")
-
-    if any(grade.lower().startswith("elcc") for grade in grades):
-        domains.append("elcc")
-
-    return domains
-
-def get_docs_with_scores(domains, question, index, docs_with_scores):
-    if domains:
-        for domain in domains:
-            extra_docs = index.similarity_search(
-                question,
-                k=2,
-                filter={
-                    "domain": domain,
-                    "doc_type": "relationship"
-                }
-            )
-            print(f"######################## extra_doc - relationship : {extra_docs}")
-            docs_with_scores.extend([(doc, 0) for doc in extra_docs])
-
-            extra_docs = index.similarity_search(
-                question,
-                k=2,
-                filter={
-                    "domain": domain,
-                    "doc_type": "comparison"
-                }
-            )
-            print(f"######################## extra_doc - comparison : {extra_docs}")
-            docs_with_scores.extend([(doc, 0) for doc in extra_docs])
-    return docs_with_scores
+    return  ", ".join(source_files), "\n\n".join(contexts)
