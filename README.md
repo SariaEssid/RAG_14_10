@@ -1,52 +1,78 @@
 # 📘 langchain-rag-service
 
 ## 🧠 Overview
-`langchain-rag-service` is a Retrieval-Augmented Generation (RAG) microservice built using FastAPI and LangChain.
+`langchain-rag-service` is a FastAPI microservice that retrieves relevant context from a Markdown knowledge base. It uses Sentence Transformers embeddings and a FAISS vector index, then returns the retrieved context and source filename to Rasa through `POST /rag/context`.
 
-This service is designed to work as an external Knowledge Engine for conversational platforms such as Rasa chatbot systems.
+The RAG service retrieves information. Rasa uses that context as part of the chatbot response flow.
 
 ---
 
 ## ⭐ Architecture Role
-Frontend → Rasa → LangChain RAG Service → Vector Store → LLM
+Frontend → Rasa → RAG Retrieval Service → FAISS Vector Store
+                           ↓
+                    Retrieved context → Rasa
 
-### Responsibilities
-- Semantic document retrieval
-- Multi-document reasoning
-- Knowledge base management
-- Metadata-based filtering (future extension)
+### 📊 Diagram
+
+```mermaid
+flowchart LR
+    User["User"] -- Message --> Frontend["Frontend"]
+    User["User"] -- Message --> Frontend["Frontend"]
+    Frontend --> User & Rasa["Rasa"]
+    Rasa -- POST /rag/context --> RAG["RAG service"]
+    RAG -- Similarity search --> FAISS["FAISS index"]
+    FAISS -- Matching chunks --> RAG
+    RAG -- Context + source_file --> Rasa
+    Rasa -- Final answer --> Frontend
+```
+
+### 📌 Responsibilities
+- Retrieve context from multiple documents for downstream reasoning
+- Retrieve semantically relevant document chunks
+- Filter retrieval by domain and grade metadata
+- Build the FAISS index from Markdown files
+- Return context and source filename to Rasa
 
 ---
 
 ## 🛠 Technology Stack
 
-| Component         | Technology                    |
-|-------------------|-------------------------------|
-| API Framework     | FastAPI                       |
-| LLM Orchestration | LangChain                     |
-| Embeddings        | Sentence Transformers         |
-| Vector Store      | FAISS                         |
-| Language Model    | OpenAI / HuggingFace / Ollama |
-| Configuration     | Python + dotenv               |
-| Containerization  | Docker                        |
+| Component           | Technology            |
+|---------------------|-----------------------|
+| API Framework       | FastAPI               |
+| Retrieval Framework | LangChain             |
+| Embeddings          | Sentence Transformers |
+| Vector Store        | FAISS                 |
+| Knowledge Base      | Markdown files        |
+| Configuration       | Python and dotenv     |
+| Containerization    | Docker                |
 
 ---
 
 ## ⚙️ Installation
 
 ### 1️⃣ Clone Repository
+
 ```bash
 git clone <repository-url>
 cd langchain-rag-service
+```
 
 ### 2️⃣ Create Virtual Environment
-python -m .venv .venv
 
-Activate environment:
-Windows:
-.venv\Scripts\activate
+```bash
+python -m venv .venv
+```
+
+Activate it on Windows:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
 
 ### 3️⃣ Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
@@ -54,8 +80,7 @@ pip install -r requirements.txt
 
 ## 📈 Future Enhancements
 
-Metadata filtering (domain / grade)
-Streaming token responses
+Streaming context responses
 Multi-language support
 Knowledge admin interface
 Hybrid search (keyword + vector)
@@ -65,23 +90,12 @@ Caching layer (Redis)
 
 ---
 
-## 🔐 Security Recommendations
+## 🔐 Security
 
 Protect API with authentication tokens
 Validate user inputs
 Implement rate limiting
 Monitor prompt injection risks
-
----
-
-## 📊 Monitoring Recommendations
-
-Log user queries
-Track retrieval accuracy
-Monitor latency and token usage
-Add observability tools (Prometheus / Grafana)
-
----
 
 ## 🧪 Testing
 
