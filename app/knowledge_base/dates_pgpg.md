@@ -36,4 +36,4 @@ Les dates par chaque Composante / épreuve :
 
 Toutes les épreuves de passage au grade se déroulent en janvier 2025.
 
-Aucune épreuve n'est programmée en février 2025.
+Aucune épreuve n'est programmée en février 2025 ou 2024.

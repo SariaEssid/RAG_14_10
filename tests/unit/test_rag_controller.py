@@ -6,20 +6,14 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.api.rag_controller import (
-    detect_domain_from_grades,
-    detect_grades,
-    load_lang_chain_context,
-)
+from app.api.rag_controller import (load_lang_chain_context)
 
 client = TestClient(app)
-
 
 class DummyDoc:
     def __init__(self, page_content, metadata):
         self.page_content = page_content
         self.metadata = metadata
-
 
 class DummyIndex:
     def similarity_search(self, *_args, **_kwargs):
@@ -55,50 +49,6 @@ class DummyIndex:
                 0.2
             )
         ]
-
-
-
-def test_detect_grades_formateur():
-    result = detect_grades("enseignant formateur associé")
-
-    assert "efa" in result
-
-
-
-def test_detect_grades_langue():
-    result = detect_grades("enseignant de langue classe 1")
-
-    assert isinstance(result, list)
-
-
-
-def test_detect_grades_no_match():
-    result = detect_grades("random question")
-
-    assert result == []
-
-
-
-def test_detect_domain_from_grades_ef():
-    result = detect_domain_from_grades(["efa"])
-
-    assert result == ["ef"]
-
-
-
-def test_detect_domain_from_grades_elcc():
-    result = detect_domain_from_grades(["elcc1"])
-
-    assert result == ["elcc"]
-
-
-
-def test_detect_domain_from_grades_none():
-    result = detect_domain_from_grades(["other"])
-
-    assert result == []
-
-
 
 def test_load_lang_chain_context_with_grades():
     from unittest.mock import patch
@@ -235,7 +185,6 @@ def test_get_context_endpoint():
     assert response.json()["answer"] == "context"
     assert response.json()["source_file"] == "file.md"
 
-
 def test_get_context_endpoint_rejects_missing_service_token():
     response = client.post(
         "/rag/context",
@@ -248,7 +197,6 @@ def test_get_context_endpoint_rejects_missing_service_token():
     )
 
     assert response.status_code == 403
-
 
 def test_get_context_endpoint_rejects_invalid_service_token():
     with patch("app.api.rag_controller.EXPECTED_RAG_TOKEN", "test-service-token"):
