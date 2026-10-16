@@ -1,14 +1,17 @@
 """
 tests/unit/test_rag_controller.py
 """
+import os
 from unittest.mock import patch
 
+from chromadb.app import settings
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.api.rag_controller import (load_lang_chain_context)
 
 client = TestClient(app)
+nbr_chunks = int(os.getenv("RAG_DEFAULT_CHUNKS"))
 
 class DummyDoc:
     def __init__(self, page_content, metadata):
@@ -60,7 +63,7 @@ def test_load_lang_chain_context_with_grades():
             question="question",
             domains=[],
             grades=["efa"],
-            nbr_chunks=2
+            nbr_chunks=nbr_chunks
         )
 
     assert filename == "efa.md"
@@ -79,7 +82,7 @@ def test_empty_index_branch():
             question="q",
             domains=[],
             grades=[],
-            nbr_chunks=2
+            nbr_chunks=nbr_chunks
         )
 
     assert filename == "empty"
@@ -177,7 +180,7 @@ def test_get_context_endpoint():
                 "question": "hello",
                 "domains": [],
                 "grades": [],
-                "nbr_chunks": 2
+                "nbr_chunks": nbr_chunks
             }
         )
 
@@ -192,7 +195,7 @@ def test_get_context_endpoint_rejects_missing_service_token():
             "question": "hello",
             "domains": [],
             "grades": [],
-            "nbr_chunks": 2,
+            "nbr_chunks": nbr_chunks,
         },
     )
 
@@ -207,7 +210,7 @@ def test_get_context_endpoint_rejects_invalid_service_token():
                 "question": "hello",
                 "domains": [],
                 "grades": [],
-                "nbr_chunks": 2,
+                "nbr_chunks": nbr_chunks,
             },
         )
 
