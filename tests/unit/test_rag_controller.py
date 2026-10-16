@@ -1,57 +1,60 @@
 """
 tests/unit/test_rag_controller.py
 """
-import os
 from unittest.mock import patch
 
-from chromadb.app import settings
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api.rag_controller import (load_lang_chain_context)
+from app.main import app
 
 client = TestClient(app)
-nbr_chunks = int(os.getenv("RAG_DEFAULT_CHUNKS"))
+nbr_chunks = 2
 
 class DummyDoc:
     def __init__(self, page_content, metadata):
         self.page_content = page_content
         self.metadata = metadata
 
-class DummyIndex:
-    def similarity_search(self, *_args, **_kwargs):
-        return [
-            DummyDoc(
-                page_content="context-1",
-                metadata={
-                    "file": "efa.md",
-                    "grade": "efa",
-                    "domain": "ef"
-                }
-            )
-        ]
 
-    def similarity_search_with_score(self, *_args, **_kwargs):
-        return [
-            (
-                DummyDoc(
-                    page_content="general-context",
-                    metadata={
-                        "file": "general.md"
-                    }
-                ),
-                0.1
+def similarity_search(*_args, **_kwargs):
+    return [
+        DummyDoc(
+            page_content="context-1",
+            metadata={
+                "file": "efa.md",
+                "grade": "efa",
+                "domain": "ef"
+            }
+        )
+    ]
+
+
+def similarity_search_with_score(*_args, **_kwargs):
+    return [
+        (
+            DummyDoc(
+                page_content="general-context",
+                metadata={
+                    "file": "general.md"
+                }
             ),
-            (
-                DummyDoc(
-                    page_content="filtered",
-                    metadata={
-                        "file": "ef_test.md"
-                    }
-                ),
-                0.2
-            )
-        ]
+            0.1
+        ),
+        (
+            DummyDoc(
+                page_content="filtered",
+                metadata={
+                    "file": "ef_test.md"
+                }
+            ),
+            0.2
+        )
+    ]
+
+
+class DummyIndex:
+    pass
 
 def test_load_lang_chain_context_with_grades():
     from unittest.mock import patch

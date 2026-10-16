@@ -69,7 +69,7 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
     if grades:
         print("💖 ######################## +GRADE")
         for grade in grades:
-            docs = index.similarity_search(
+            docs = similarity_search(
                 question,
                 k=nbr_chunks,
                 filter={"grade": grade}
@@ -83,7 +83,7 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
     elif not grades and domains:
         print("💖 ######################## -GRADE | +DOMAIN")
         for domain in domains:
-            docs = index.similarity_search(
+            docs = similarity_search(
                 question,
                 k=nbr_chunks,
                 filter={"domain": domain}
@@ -97,7 +97,7 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
             return "empty", "Aucun contexte n'est trouvé."
 
         candidate_k = min(nbr_chunks * 5, total_chunks)
-        raw_docs_with_scores = index.similarity_search_with_score(
+        raw_docs_with_scores = similarity_search_with_score(
             question, k=candidate_k
         )
 
@@ -107,7 +107,9 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
         # 2. Filter out documents where page_content starts with "ef"
         docs_with_scores = [
             (doc, score) for doc, score in raw_docs_with_scores
-            if not doc.metadata.get("file", "").startswith(("ef", "elcc"))        ]
+            if not doc.metadata.get("file", "").startswith(("ef", "elcc"))]
+
+        docs_with_scores = docs_with_scores[:nbr_chunks]
 
         print("--- Filtered Files ---")
         for doc, score in docs_with_scores:
