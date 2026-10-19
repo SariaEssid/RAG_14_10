@@ -1,15 +1,21 @@
-"""
-tests/unit/test_rag_controller.py
-"""
+"""Unit tests for the RAG controller."""
+
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.api.rag_controller import (load_lang_chain_context)
+from app.api.rag_controller import (
+    detect_domain_from_grades,
+    detect_grades,
+    load_lang_chain_context,
+    rank_and_limit,
+)
 from app.main import app
 
+
 client = TestClient(app)
-nbr_chunks = 2
+TEST_TOKEN = "test-service-token"
+
 
 class DummyDoc:
     def __init__(self, page_content, metadata):
@@ -17,179 +23,174 @@ class DummyDoc:
         self.metadata = metadata
 
 
-def similarity_search(*_args, **_kwargs):
-    return [
-        DummyDoc(
-            page_content="context-1",
-            metadata={
-                "file": "efa.md",
-                "grade": "efa",
-                "domain": "ef"
-            }
-        )
-    ]
-
-
-def similarity_search_with_score(*_args, **_kwargs):
-    return [
-        (
-            DummyDoc(
-                page_content="general-context",
-                metadata={
-                    "file": "general.md"
-                }
-            ),
-            0.1
-        ),
-        (
-            DummyDoc(
-                page_content="filtered",
-                metadata={
-                    "file": "ef_test.md"
-                }
-            ),
-            0.2
-        )
-    ]
-
-
 class DummyIndex:
-    pass
+    """Fake with the search method used by the production controller."""
 
-def test_load_lang_chain_context_with_grades():
-    from unittest.mock import patch
+    def __init__(self, scored_docs=None):
+        self.scored_docs = scored_docs or []
+        self.search_calls = []
 
-    with patch("app.api.rag_controller.get_vector_store", return_value=DummyIndex()), \
-         patch("app.api.rag_controller.detect_domain_from_grades", return_value=["ef"]):
+    def similarity_search_with_score(self, question, k, filter=None):
+        self.search_calls.append(
+            {"question": question, "k": k, "filter": filter}
+        )
 
+        results = self.scored_docs
+        if filter:
+            results = [
+                (doc, score)
+                for doc, score in results
+                if all(doc.metadata.get(key) == value for key, value in filter.items())
+            ]
+
+        return results[:k]
+
+
+def test_detect_grades_formateur():
+    assert "efa" in detect_grades("enseignant formateur associé")
+
+
+def test_detect_grades_langue():
+    result = detect_grades("enseignant de langue classe 1")
+
+    assert isinstance(result, list)
+    assert result
+
+
+def test_detect_grades_no_match():
+    assert detect_grades("random question") == []
+
+
+def test_detect_domain_from_grades_ef():
+    assert detect_domain_from_grades(["efa"]) == ["ef"]
+
+
+def test_detect_domain_from_grades_elcc():
+    assert detect_domain_from_grades(["elcc1"]) == ["elcc"]
+
+
+def test_detect_domain_from_grades_no_match():
+    assert detect_domain_from_grades(["other"]) == []
+
+
+def test_load_lang_chain_context_with_grade_filter():
+    doc = DummyDoc(
+        "grade context",
+        {"file": "efa.md", "grade": "efa", "domain": "ef"},
+    )
+    index = DummyIndex([(doc, 0.4)])
+
+    with patch("app.api.rag_controller.get_vector_store", return_value=index):
         filename, context = load_lang_chain_context(
             question="question",
             domains=[],
             grades=["efa"],
-            nbr_chunks=nbr_chunks
+            nbr_chunks=2,
         )
 
     assert filename == "efa.md"
-    assert "context-1" in context
+    assert "grade context" in context
+    assert any(call["filter"] == {"grade": "efa"} for call in index.search_calls)
 
-def test_empty_index_branch():
-    from unittest.mock import patch
 
-    class EmptyIndex:
-        def similarity_search_with_score(self, *a, **k):
-            return []
+def test_load_lang_chain_context_with_domain_filter():
+    doc = DummyDoc("domain context", {"file": "ef.md", "domain": "ef"})
+    index = DummyIndex([(doc, 0.3)])
 
-    with patch("app.api.rag_controller.get_vector_store", return_value=EmptyIndex()):
-
+    with patch("app.api.rag_controller.get_vector_store", return_value=index):
         filename, context = load_lang_chain_context(
-            question="q",
+            question="question",
+            domains=["ef"],
+            grades=[],
+            nbr_chunks=2,
+        )
+
+    assert filename == "ef.md"
+    assert "domain context" in context
+    assert any(call["filter"] == {"domain": "ef"} for call in index.search_calls)
+
+
+def test_load_lang_chain_context_without_filters_ranks_and_limits_results():
+    ef_doc = DummyDoc("EF context", {"file": "efa.md"})
+    elcc_doc = DummyDoc("ELCC context", {"file": "elcc1.md"})
+    index = DummyIndex([
+        (ef_doc, 0.1),
+        (elcc_doc, 0.4),
+    ])
+
+    with patch("app.api.rag_controller.get_vector_store", return_value=index):
+        filename, context = load_lang_chain_context(
+            question="question",
             domains=[],
             grades=[],
-            nbr_chunks=nbr_chunks
+            nbr_chunks=2,
+        )
+
+    assert filename == "efa.md, elcc1.md"
+    assert "EF context" in context
+    assert "ELCC context" in context
+    assert index.search_calls[0]["filter"] is None
+
+
+def test_rank_and_limit_sorts_and_deduplicates_chunks():
+    first = DummyDoc("same chunk", {"file": "a.md"})
+    duplicate = DummyDoc(" same   chunk ", {"file": "a.md"})
+    other = DummyDoc("other chunk", {"file": "b.md"})
+
+    result = rank_and_limit(
+        [(first, 0.8), (duplicate, 0.9), (other, 0.2)],
+        nbr_chunks=2,
+    )
+
+    assert [(doc.metadata["file"], score) for doc, score in result] == [
+        ("b.md", 0.2),
+        ("a.md", 0.8),
+    ]
+
+
+def test_empty_search_returns_empty_context():
+    index = DummyIndex()
+
+    with patch("app.api.rag_controller.get_vector_store", return_value=index):
+        filename, context = load_lang_chain_context(
+            question="question",
+            domains=[],
+            grades=[],
+            nbr_chunks=2,
         )
 
     assert filename == "empty"
     assert "Aucun context" in context
 
-def test_grade_and_domain_branch():
-    from unittest.mock import patch
 
-    class DummyDoc:
-        def __init__(self):
-            self.page_content = "X"
-            self.metadata = {"file": "efa.md", "grade": "efa", "domain": "ef"}
-
-    class Index:
-        def similarity_search(self, *a, **k):
-            return [DummyDoc()]
-
-    with patch("app.api.rag_controller.get_vector_store", return_value=Index()), \
-         patch("app.api.rag_controller.detect_domain_from_grades", return_value=["ef"]):
-
-        filename, context = load_lang_chain_context(
-            "q", [], ["efa"], 2
-        )
-
-    assert filename == "efa.md"
-    assert "X" in context
-
-def test_domain_only_branch():
-    from unittest.mock import patch
-
-    class DummyDoc:
-        def __init__(self):
-            self.page_content = "D"
-            self.metadata = {"file": "efa.md"}
-
-    class Index:
-        def similarity_search(self, *a, **k):
-            return [DummyDoc()]
-
-    with patch("app.api.rag_controller.get_vector_store", return_value=Index()):
-
-        filename, context = load_lang_chain_context(
-            "q", ["ef"], [], 2
-        )
-
-    assert filename == "efa.md"
-
-def test_default_branch():
-    from unittest.mock import patch
-
-    class DummyDoc:
-        def __init__(self):
-            self.page_content = "GEN"
-            self.metadata = {"file": "general.md"}
-
-    class Index:
-        def similarity_search_with_score(self, *a, **k):
-            return [(DummyDoc(), 0.1)]
-
-    with patch("app.api.rag_controller.get_vector_store", return_value=Index()):
-
-        filename, context = load_lang_chain_context(
-            "q", [], [], 2
-        )
-
-    assert filename == "general.md"
-    assert "GEN" in context
-
-def test_empty_context_branch():
-    from unittest.mock import patch
-
-    class Empty:
-        def similarity_search_with_score(self, *a, **k):
-            return []
-
-    with patch("app.api.rag_controller.get_vector_store", return_value=Empty()):
-
-        filename, context = load_lang_chain_context(
-            "q", [], [], 2
-        )
-
-    assert filename == "empty"
-
-def test_get_context_endpoint():
-    with patch("app.api.rag_controller.EXPECTED_RAG_TOKEN", "test-service-token"), \
-         patch(
-        "app.api.rag_controller.load_lang_chain_context",
-        return_value=("file.md", "context")
+def test_get_context_endpoint_returns_response():
+    with (
+        patch(
+            "app.api.rag_controller.get_expected_token",
+            return_value=TEST_TOKEN,
+        ),
+        patch(
+            "app.api.rag_controller.load_lang_chain_context",
+            return_value=("file.md", "context"),
+        ),
     ):
-
         response = client.post(
             "/rag/context",
-            headers={"X-Service-Token": "test-service-token"},
+            headers={"X-Service-Token": TEST_TOKEN},
             json={
                 "question": "hello",
                 "domains": [],
                 "grades": [],
-                "nbr_chunks": nbr_chunks
-            }
+                "nbr_chunks": 2,
+            },
         )
 
     assert response.status_code == 200
-    assert response.json()["answer"] == "context"
-    assert response.json()["source_file"] == "file.md"
+    assert response.json() == {
+        "answer": "context",
+        "source_file": "file.md",
+    }
+
 
 def test_get_context_endpoint_rejects_missing_service_token():
     response = client.post(
@@ -198,14 +199,18 @@ def test_get_context_endpoint_rejects_missing_service_token():
             "question": "hello",
             "domains": [],
             "grades": [],
-            "nbr_chunks": nbr_chunks,
+            "nbr_chunks": 2,
         },
     )
 
     assert response.status_code == 403
 
+
 def test_get_context_endpoint_rejects_invalid_service_token():
-    with patch("app.api.rag_controller.EXPECTED_RAG_TOKEN", "test-service-token"):
+    with patch(
+        "app.api.rag_controller.get_expected_token",
+        return_value=TEST_TOKEN,
+    ):
         response = client.post(
             "/rag/context",
             headers={"X-Service-Token": "wrong-token"},
@@ -213,7 +218,7 @@ def test_get_context_endpoint_rejects_invalid_service_token():
                 "question": "hello",
                 "domains": [],
                 "grades": [],
-                "nbr_chunks": nbr_chunks,
+                "nbr_chunks": 2,
             },
         )
 
