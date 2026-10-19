@@ -1,5 +1,5 @@
 """Unit tests for the RAG controller."""
-
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -22,12 +22,14 @@ class DummyDoc:
         self.page_content = page_content
         self.metadata = metadata
 
-
 class DummyIndex:
     """Fake with the search method used by the production controller."""
 
-    def __init__(self, scored_docs=None):
+    def __init__(self, scored_docs=None, ntotal=None):
         self.scored_docs = scored_docs or []
+        self.index = SimpleNamespace(
+            ntotal=len(self.scored_docs) if ntotal is None else ntotal
+        )
         self.search_calls = []
 
     def similarity_search_with_score(self, question, k, filter=None):
@@ -40,11 +42,28 @@ class DummyIndex:
             results = [
                 (doc, score)
                 for doc, score in results
-                if all(doc.metadata.get(key) == value for key, value in filter.items())
+                if all(
+                    doc.metadata.get(key) == value
+                    for key, value in filter.items()
+                )
             ]
 
         return results[:k]
 
+def test_empty_index_returns_without_searching():
+    index = DummyIndex(ntotal=0)
+
+    with patch("app.api.rag_controller.get_vector_store", return_value=index):
+        filename, context = load_lang_chain_context(
+            question="question",
+            domains=[],
+            grades=[],
+            nbr_chunks=2,
+        )
+
+    assert filename == "empty"
+    assert "Aucun contexte" in context
+    assert index.search_calls == []
 
 def test_detect_grades_formateur():
     assert "efa" in detect_grades("enseignant formateur associé")

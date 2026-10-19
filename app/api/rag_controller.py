@@ -51,7 +51,7 @@ def verify_rasa_service(token: str = Depends(service_token_header)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 @router.post("/rag/context", response_model=RAGResponse)
-async def get_context(request: RAGRequest, _authenticated: None = Depends(verify_rasa_service)):
+def get_context(request: RAGRequest, _authenticated: None = Depends(verify_rasa_service)):
     print("💖  💖   💖   💖   💖   💖   💖   💖   💖  💖   💖   💖   💖   💖   💖   💖   💖   💖  💖  💖   💖   💖   💖   💖   💖   💖   💖  WELCOME to LANGCHAIN 1 ")
     filename, context_text = load_lang_chain_context(request.question, request.domains, request.grades, request.nbr_chunks)
     print("######################## WELCOME to LANGCHAIN 3")
@@ -59,12 +59,16 @@ async def get_context(request: RAGRequest, _authenticated: None = Depends(verify
     expected_token = get_expected_token()
     if not expected_token:
         context_text = "RASA_RAG_TOKEN_NOT_EXIST"
+
     return RAGResponse(answer=context_text, source_file=filename)
 
 def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunks:int):
     """Retrieve top-k FAISS chunks for a question."""
 
     index = get_vector_store()  # FAISS vector store
+
+    if index.index.ntotal == 0:
+        return "empty", "Aucun contexte n'est trouvé."
 
     # get top-k docs with scores
     print("######################## WELCOME to LANGCHAIN 2")
