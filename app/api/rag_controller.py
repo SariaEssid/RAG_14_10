@@ -3,12 +3,18 @@ app/api/rag_controller.py
 
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 from app.models.request_models import RAGRequest
 from app.models.response_models import RAGResponse
 
-load_dotenv()  # Must run before os.getenv(...)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = PROJECT_ROOT / ".env.dev"
+
+# Load .env.dev before reading or validating environment variables
+load_dotenv(dotenv_path=ENV_FILE, override=False)
 
 import os
 import secrets
@@ -16,9 +22,6 @@ import re
 import unicodedata
 
 from fastapi import APIRouter
-from pydantic import BaseModel
-from typing import List, Optional
-from pydantic import Field
 from app.services.vector_store import get_vector_store
 
 from fastapi import Depends, HTTPException
@@ -107,7 +110,6 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
     docs_with_scores = rank_and_limit(docs_with_scores, nbr_chunks)
 
     contexts = []
-    filename = "empty"
     print("\n💖   💖   💖   Question : " + question)
 
     if not docs_with_scores:
