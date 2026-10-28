@@ -72,10 +72,3 @@ est équivalent au grade :
 ## evolution des responsabilites :
 
 evolution des responsabilites suit cette progression : ELCC -> ELCC1 -> ELCC2 pour la spécialité ```Langues```
-
-
----
-
-## ✔ couleur
-
-La vie en rose
