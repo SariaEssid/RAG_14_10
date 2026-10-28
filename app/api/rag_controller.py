@@ -40,14 +40,51 @@ GRADE_ALIASES = {
     "elcc": ["elcc", "enseignant de langue"],
 }
 
+def get_max_l2_distance():
+    """Return the configured maximum FAISS L2 distance, or None if disabled."""
+    raw_value = os.getenv("RAG_MAX_L2_DISTANCE")
+
+    # Leave the threshold disabled until it has been calibrated.
+    if raw_value is None or not raw_value.strip():
+        return None
+
+    try:
+        threshold = float(raw_value)
+    except ValueError:
+        raise ValueError(
+            "RAG_MAX_L2_DISTANCE must be a valid number."
+        ) from None
+
+    if threshold < 0:
+        raise ValueError(
+            "RAG_MAX_L2_DISTANCE must be non-negative."
+        )
+
+    return threshold
+
+def filter_by_max_l2_distance(docs_with_scores):
+    """Discard chunks whose FAISS distance exceeds the configured limit."""
+    max_distance = get_max_l2_distance()
+
+    if max_distance is None:
+        return docs_with_scores
+
+    return [
+        (doc, score)
+        for doc, score in docs_with_scores
+        if score <= max_distance
+    ]
+
 def get_expected_token():
     token = os.getenv("RASA_RAG_TOKEN")
-    if not token:
-        raise HTTPException(status_code=500, detail="RASA_RAG_TOKEN must be configured")
+    if not token or not token.strip():
+        raise HTTPException(
+            status_code=500,
+            detail="RAG service authentication is not configured",
+        )
     return token
 
-def verify_rasa_service(token: str = Depends(service_token_header)):
-
+def verify_rasa_service(token: str = Depends(service_token_header)) -> None:
     expected_token = get_expected_token()
     print(f"RASA_RAG_TOKEN: {expected_token}")
     if not secrets.compare_digest(token, expected_token):
@@ -58,10 +95,6 @@ def get_context(request: RAGRequest, _authenticated: None = Depends(verify_rasa_
     print("💖  💖   💖   💖   💖   💖   💖   💖   💖  💖   💖   💖   💖   💖   💖   💖   💖   💖  💖  💖   💖   💖   💖   💖   💖   💖   💖  WELCOME to LANGCHAIN 1 ")
     filename, context_text = load_lang_chain_context(request.question, request.domains, request.grades, request.nbr_chunks)
     print("######################## WELCOME to LANGCHAIN 3")
-
-    expected_token = get_expected_token()
-    if not expected_token:
-        context_text = "RASA_RAG_TOKEN_NOT_EXIST"
 
     return RAGResponse(answer=context_text, source_file=filename)
 
@@ -103,11 +136,24 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
         print("💖 ######################## -GRADE | -DOMAIN : " + str(domains))
         docs_with_scores = search_with_scores(index, question, nbr_chunks)
 
-        print("--- Ranked Files ---")
-        for doc, score in docs_with_scores:
-            print(f"Keeping file: {doc.metadata.get('file')} score={score}")
+    # TEMPORARY: collect actual FAISS distances for calibration.
+    for doc, score in docs_with_scores:
+        print(
+            f"RETRIEVAL_EVAL | "
+            f"question={question!r} | "
+            f"distance={float(score):.6f} | "
+            f"file={doc.metadata.get('file', 'unknown')} | "
+            f"chunk={doc.page_content[:250]!r}"
+        )
 
-    docs_with_scores = rank_and_limit(docs_with_scores, nbr_chunks)
+    # Apply the configured distance threshold once.
+    docs_with_scores = filter_by_max_l2_distance(docs_with_scores)
+
+    # Select the final chunks once.
+    docs_with_scores = rank_and_limit(
+        docs_with_scores,
+        nbr_chunks
+    )
 
     contexts = []
     print("\n💖   💖   💖   Question : " + question)
