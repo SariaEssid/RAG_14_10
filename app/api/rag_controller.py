@@ -96,6 +96,9 @@ def get_context(request: RAGRequest, _authenticated: None = Depends(verify_rasa_
     filename, context_text = load_lang_chain_context(request.question, request.domains, request.grades, request.nbr_chunks)
     print("######################## WELCOME to LANGCHAIN 3")
 
+    if filename == "empty":
+        raise HTTPException(status_code=404, detail="no_relevant_context")
+
     return RAGResponse(answer=context_text, source_file=filename)
 
 def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunks:int):
@@ -108,9 +111,7 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
 
     # get top-k docs with scores
     print("######################## WELCOME to LANGCHAIN 2")
-    grades_lol = detect_grades(question)
     print(f"######################## grades_rasa : {grades}")
-    print(f"######################## grades_chain : {grades_lol}")
     print(f"######################## domains : {domains}")
     print(f"######################## nbr chunks : {nbr_chunks}")
 
@@ -152,7 +153,8 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
     # Select the final chunks once.
     docs_with_scores = rank_and_limit(
         docs_with_scores,
-        nbr_chunks
+        nbr_chunks,
+        grades
     )
 
     contexts = []
@@ -177,16 +179,17 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
 
     return filename, "\n\n".join(contexts)
 
-
 def search_with_scores(index, question, k, metadata_filter=None):
     """Return FAISS (doc, distance) pairs. Lower L2 distance is a better match."""
     search_kwargs = {"k": k}
     if metadata_filter:
         search_kwargs["filter"] = metadata_filter
+        # FAISS filters AFTER fetching fetch_k candidates (default 20).
+        # Scan the whole index so the filter never starves the results.
+        search_kwargs["fetch_k"] = max(k, index.index.ntotal)
     return list(index.similarity_search_with_score(question, **search_kwargs))
 
-
-def rank_and_limit(docs_with_scores, nbr_chunks, grades=None):
+def rank_and_limit(docs_with_scores, nbr_chunks, grades):
     """Deduplicate, keep the best chunk of each requested grade, then fill by distance."""
     unique_docs, seen = [], set()
     for doc, score in docs_with_scores:
@@ -220,27 +223,6 @@ def normalize_text(text: str) -> str:
     text = "".join(char for char in text if not unicodedata.combining(char))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
-
-def detect_grades(question: str) -> list[str]:
-    normalized_question = f" {normalize_text(question)} "
-    matches = []
-
-    for grade, aliases in GRADE_ALIASES.items():
-        for alias in aliases:
-            normalized_alias = normalize_text(alias)
-            if f" {normalized_alias} " in normalized_question:
-                matches.append((len(normalized_alias), grade))
-
-    if not matches:
-        return []
-
-    longest_match_length = max(length for length, _ in matches)
-    return sorted({
-        grade
-        for length, grade in matches
-        if length == longest_match_length
-    })
-
 def detect_domain_from_grades(grades: list[str]) -> list[str]:
     domains = []
 
@@ -259,17 +241,9 @@ def get_docs_with_scores(domains, question, index, docs_with_scores):
                 index,
                 question,
                 2,
-                {"domain": domain, "doc_type": "relationship"},
+                {"domain": domain},
             )
             print(f"######################## extra_doc - relationship : {extra_docs}")
             docs_with_scores.extend(extra_docs)
 
-            extra_docs = search_with_scores(
-                index,
-                question,
-                2,
-                {"domain": domain, "doc_type": "comparison"},
-            )
-            print(f"######################## extra_doc - comparison : {extra_docs}")
-            docs_with_scores.extend(extra_docs)
     return docs_with_scores

@@ -3,7 +3,7 @@ app/academic_rag/build_rag_index.py
 
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
-
+import json
 # build_rag_index.py
 
 import logging
@@ -13,12 +13,19 @@ import sys
 from datetime import datetime
 
 from dotenv import load_dotenv
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 from app.academic_rag.langchain_embedding_loader import get_embedder
 from app.academic_rag.markdown_loader import load_markdown_documents
-from app.config import EMBEDDING_MODEL, PROJECT_ROOT
+from pathlib import Path
+
+from app.config import (
+    EMBEDDING_MODEL,
+    NORMALIZE_EMBEDDINGS,
+    QUERY_PREFIX,
+    PASSAGE_PREFIX,
+    PROJECT_ROOT
+)
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +59,18 @@ def build_faiss_index(kb_folder, index_folder=RAG_INDEX_FOLDER, meta_file=META_F
     index.save_local(index_folder)  # ✅ folder path, not a file path
     with open(meta_file, "wb") as f:
         pickle.dump(metadatas, f)
+
+    manifest = {
+        "embedding_model": EMBEDDING_MODEL,
+        "normalize_embeddings": NORMALIZE_EMBEDDINGS,
+        "query_prefix": QUERY_PREFIX,
+        "passage_prefix": PASSAGE_PREFIX,
+    }
+
+    Path(index_folder, "embedding_manifest.json").write_text(
+        json.dumps(manifest, indent=2),
+        encoding="utf-8",
+    )
 
     log.info(f"✅ RAG FAISS index built successfully at {datetime.now()}")
     log.info(f"Index folder: {index_folder}")

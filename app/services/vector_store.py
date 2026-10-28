@@ -4,19 +4,49 @@ app/services/vector_store.py
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
 
+import json
 import logging
 import os
+from pathlib import Path
 
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.academic_rag.langchain_embedding_loader import get_embedder
-from app.config import EMBEDDING_MODEL, PROJECT_ROOT
+from app.config import (
+    EMBEDDING_MODEL,
+    NORMALIZE_EMBEDDINGS,
+    QUERY_PREFIX,
+    PASSAGE_PREFIX,
+)
+from app.config import PROJECT_ROOT
 
 log = logging.getLogger(__name__)
 RAG_INDEX_FOLDER = os.path.join(PROJECT_ROOT, "faiss_index_rag") # VECTOR_DB_PATH
 _index = None
 
+def validate_embedding_manifest(index_folder: str) -> None:
+    manifest_path = Path(index_folder) / "embedding_manifest.json"
+
+    if not manifest_path.exists():
+        raise RuntimeError(
+            f"FAISS index has no embedding manifest: {manifest_path}. "
+            "Rebuild the index with the current application version."
+        )
+
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected = {
+        "embedding_model": EMBEDDING_MODEL,
+        "normalize_embeddings": NORMALIZE_EMBEDDINGS,
+        "query_prefix": QUERY_PREFIX,
+        "passage_prefix": PASSAGE_PREFIX,
+    }
+
+    if saved != expected:
+        raise RuntimeError(
+            "FAISS index was built with a different embedding configuration. "
+            f"Index configuration: {saved}; running configuration: {expected}. "
+            "Rebuild the FAISS index before starting the RAG service."
+        )
 
 def get_vector_store():
     global _index

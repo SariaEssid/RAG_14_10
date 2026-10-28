@@ -1,6 +1,6 @@
 """Unit tests for the RAG controller."""
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -8,7 +8,7 @@ from app.api.rag_controller import (
     detect_domain_from_grades,
     detect_grades,
     load_lang_chain_context,
-    rank_and_limit,
+    rank_and_limit, search_with_scores,
 )
 from app.main import app
 
@@ -242,3 +242,51 @@ def test_get_context_endpoint_rejects_invalid_service_token():
         )
 
     assert response.status_code == 401
+
+def test_rank_and_limit_guarantees_one_chunk_per_grade():
+    docs = [
+        (DummyDoc("ef-1",  {"file": "ef.md",  "grade": "ef"}),  0.25),
+        (DummyDoc("ef-2",  {"file": "ef.md",  "grade": "ef"}),  0.26),
+        (DummyDoc("efs-1", {"file": "efs.md", "grade": "efs"}), 0.27),
+        (DummyDoc("efa-1", {"file": "efa.md", "grade": "efa"}), 0.28),
+    ]
+
+    result = rank_and_limit(docs, nbr_chunks=2, grades=["ef", "efs", "efa"])
+
+    grades_returned = {doc.metadata["grade"] for doc, _ in result}
+    assert grades_returned == {"ef", "efs", "efa"}
+    assert len(result) == 3
+    assert [s for _, s in result] == sorted(s for _, s in result)
+
+
+def test_rank_and_limit_without_grades_keeps_old_behaviour():
+    docs = [
+        (DummyDoc("a", {"file": "a.md", "grade": "a"}), 0.30),
+        (DummyDoc("b", {"file": "b.md", "grade": "b"}), 0.20),
+        (DummyDoc("c", {"file": "c.md", "grade": "c"}), 0.10),
+    ]
+
+    result = rank_and_limit(docs, nbr_chunks=2)
+
+    assert [doc.page_content for doc, _ in result] == ["c", "b"]
+
+def test_search_with_scores_scans_whole_index_when_filtered():
+    index = MagicMock()
+    index.index.ntotal = 269
+    index.similarity_search_with_score.return_value = []
+
+    search_with_scores(index, "question", 2, {"grade": "efa"})
+
+    index.similarity_search_with_score.assert_called_once_with(
+        "question", k=2, filter={"grade": "efa"}, fetch_k=269
+    )
+
+
+def test_search_with_scores_unfiltered_keeps_default_fetch():
+    index = MagicMock()
+    index.index.ntotal = 269
+    index.similarity_search_with_score.return_value = []
+
+    search_with_scores(index, "question", 2)
+
+    index.similarity_search_with_score.assert_called_once_with("question", k=2)

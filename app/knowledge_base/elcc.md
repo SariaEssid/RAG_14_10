@@ -12,7 +12,7 @@ Si le candidat est un ```ELCC``` -> C'est possible de postuler pour le grade sui
 
 ⛔ INTERDIT de postuler pour le MÊME grade ```Enseignant de Langue et de Communication et de Citoyenneté (ELCC)```
 
-⛔ Impossible de sauter le grade suivant ```ELCC Classe 1``` et postuler directement pour le grade supérieur ```Enseignant de Langue et de Communication et de Citoyenneté Classe 2 (ELCC Classe 2)```
+⛔ Impossible de me sauter le grade suivant ```ELCC Classe 1``` et postuler directement pour le grade supérieur ```Enseignant de Langue et de Communication et de Citoyenneté Classe 2 (ELCC Classe 2)```
 
 ---
 
@@ -72,3 +72,10 @@ est équivalent au grade :
 ## evolution des responsabilites :
 
 evolution des responsabilites suit cette progression : ELCC -> ELCC1 -> ELCC2 pour la spécialité ```Langues```
+
+
+---
+
+## ✔ couleur
+
+La vie en rose
