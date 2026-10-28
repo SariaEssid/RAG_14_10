@@ -9,6 +9,8 @@ import os
 
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
+
+from app.academic_rag.langchain_embedding_loader import get_embedder
 from app.config import EMBEDDING_MODEL, PROJECT_ROOT
 
 log = logging.getLogger(__name__)
@@ -21,11 +23,10 @@ def get_vector_store():
 
     if _index is None:
         log.info("🚀 Loading FAISS index...")
-        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
         _index = FAISS.load_local(
             RAG_INDEX_FOLDER,
-            embeddings,
+            get_embedder(),
             allow_dangerous_deserialization = True
         )
 

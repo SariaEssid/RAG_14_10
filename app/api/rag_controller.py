@@ -186,22 +186,34 @@ def search_with_scores(index, question, k, metadata_filter=None):
     return list(index.similarity_search_with_score(question, **search_kwargs))
 
 
-def rank_and_limit(docs_with_scores, nbr_chunks):
-    """Deduplicate chunks, then keep the closest nbr_chunks by FAISS distance."""
-    unique_docs = []
-    seen_chunks = set()
-
+def rank_and_limit(docs_with_scores, nbr_chunks, grades=None):
+    """Deduplicate, keep the best chunk of each requested grade, then fill by distance."""
+    unique_docs, seen = [], set()
     for doc, score in docs_with_scores:
-        file_name = doc.metadata.get("file", "unknown")
-        normalized_content = " ".join(doc.page_content.split())
-        key = (file_name, normalized_content)
-        if key in seen_chunks:
+        key = (doc.metadata.get("file", "unknown"), " ".join(doc.page_content.split()))
+        if key in seen:
             continue
-        seen_chunks.add(key)
+        seen.add(key)
         unique_docs.append((doc, score))
 
     unique_docs.sort(key=lambda item: item[1])
-    return unique_docs[:nbr_chunks]
+
+    selected, chosen_ids = [], set()
+    for grade in grades or []:
+        best = next((i for i in unique_docs if i[0].metadata.get("grade") == grade), None)
+        if best and id(best) not in chosen_ids:
+            selected.append(best)
+            chosen_ids.add(id(best))
+
+    limit = max(nbr_chunks, len(selected))
+    for item in unique_docs:
+        if len(selected) >= limit:
+            break
+        if id(item) not in chosen_ids:
+            selected.append(item)
+            chosen_ids.add(id(item))
+
+    return sorted(selected, key=lambda item: item[1])
 
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize("NFKD", text.lower())

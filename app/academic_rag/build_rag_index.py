@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
+from app.academic_rag.langchain_embedding_loader import get_embedder
 from app.academic_rag.markdown_loader import load_markdown_documents
 from app.config import EMBEDDING_MODEL, PROJECT_ROOT
 
@@ -44,13 +45,8 @@ def build_faiss_index(kb_folder, index_folder=RAG_INDEX_FOLDER, meta_file=META_F
     texts = [c.page_content for c in chunks]
     metadatas = [c.metadata for c in chunks]
 
-    # Initialize embeddings
-    embedder = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL
-    )
-
     # Build FAISS vector store
-    index = FAISS.from_texts(texts, embedder, metadatas=metadatas)
+    index = FAISS.from_texts(texts, get_embedder(), metadatas=metadatas)
 
     # Save index and metadata
     index.save_local(index_folder)  # ✅ folder path, not a file path
