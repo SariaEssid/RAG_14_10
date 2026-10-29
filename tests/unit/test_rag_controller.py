@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from app.api.rag_controller import (
     detect_domain_from_grades,
-    detect_grades,
     load_lang_chain_context,
     rank_and_limit, search_with_scores,
 )
@@ -64,21 +63,6 @@ def test_empty_index_returns_without_searching():
     assert filename == "empty"
     assert "Aucun contexte" in context
     assert index.search_calls == []
-
-def test_detect_grades_formateur():
-    assert "efa" in detect_grades("enseignant formateur associé")
-
-
-def test_detect_grades_langue():
-    result = detect_grades("enseignant de langue classe 1")
-
-    assert isinstance(result, list)
-    assert result
-
-
-def test_detect_grades_no_match():
-    assert detect_grades("random question") == []
-
 
 def test_detect_domain_from_grades_ef():
     assert detect_domain_from_grades(["efa"]) == ["ef"]

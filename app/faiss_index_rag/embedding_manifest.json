@@ -1,0 +1,6 @@
+{
+  "embedding_model": "intfloat/multilingual-e5-base",
+  "normalize_embeddings": true,
+  "query_prefix": "query: ",
+  "passage_prefix": "passage: "
+}

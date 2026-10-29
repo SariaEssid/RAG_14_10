@@ -54,10 +54,17 @@ def get_vector_store():
     if _index is None:
         log.info("🚀 Loading FAISS index...")
 
+        # Refuse to deserialize an index unless its build-time embedding
+        # configuration matches the one used for queries. This must happen
+        # before load_local reads the pickle-backed docstore.
+        validate_embedding_manifest(RAG_INDEX_FOLDER)
+
         _index = FAISS.load_local(
             RAG_INDEX_FOLDER,
             get_embedder(),
-            allow_dangerous_deserialization = True
+            # LangChain stores the docstore and ID map in a pickle. Only load
+            # index artifacts shipped from a trusted, controlled build.
+            allow_dangerous_deserialization=True,
         )
 
         log.info("✅ FAISS loaded successfully")
