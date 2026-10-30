@@ -4,11 +4,12 @@ app/api/rag_controller.py
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
 from pathlib import Path
-
+from fastapi import Request
 from dotenv import load_dotenv
 
 from app.models.request_models import RAGRequest
 from app.models.response_models import RAGResponse
+from app.services.metrics import RAG_RETRIEVAL_COUNT
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = PROJECT_ROOT / ".env.dev"
@@ -29,16 +30,6 @@ from fastapi.security import APIKeyHeader
 
 service_token_header = APIKeyHeader(name="X-Service-Token")
 router = APIRouter()
-
-GRADE_ALIASES = {
-    "efm": ["efm", "manager", "enseignant formateur manager"],
-    "efs": ["efs", "senior", "enseignant formateur senior"],
-    "efa": ["efa", "associe", "enseignant formateur associe"],
-    "ef": ["ef", "enseignant formateur"],
-    "elcc1": ["elcc1", "classe 1"],
-    "elcc2": ["elcc2", "classe 2"],
-    "elcc": ["elcc", "enseignant de langue"],
-}
 
 def get_max_l2_distance():
     """Return the configured maximum FAISS L2 distance, or None if disabled."""
@@ -75,31 +66,36 @@ def filter_by_max_l2_distance(docs_with_scores):
         if score <= max_distance
     ]
 
-def get_expected_token():
+def load_service_token() -> str:
+    """Called once at startup. Raises if the token is missing."""
     token = os.getenv("RASA_RAG_TOKEN")
     if not token or not token.strip():
-        raise HTTPException(
-            status_code=500,
-            detail="RAG service authentication is not configured",
-        )
+        raise RuntimeError("RASA_RAG_TOKEN is not set: refusing to start")
     return token
 
-def verify_rasa_service(token: str = Depends(service_token_header)) -> None:
-    expected_token = get_expected_token()
-    print(f"RASA_RAG_TOKEN: {expected_token}")
-    if not secrets.compare_digest(token, expected_token):
+def verify_rasa_service(request: Request, token: str = Depends(service_token_header)) -> None:
+    expected = request.app.state.service_token
+    if not secrets.compare_digest(token.encode(), expected.encode()):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 @router.post("/rag/context", response_model=RAGResponse)
 def get_context(request: RAGRequest, _authenticated: None = Depends(verify_rasa_service)):
     print("💖  💖   💖   💖   💖   💖   💖   💖   💖  💖   💖   💖   💖   💖   💖   💖   💖   💖  💖  💖   💖   💖   💖   💖   💖   💖   💖  WELCOME to LANGCHAIN 1 ")
-    filename, context_text = load_lang_chain_context(request.question, request.domains, request.grades, request.nbr_chunks)
+    filename, context_text = load_lang_chain_context(request.question,
+                                                     request.domains,
+                                                     request.grades,
+                                                     request.nbr_chunks)
     print("######################## WELCOME to LANGCHAIN 3")
 
     if filename == "empty":
-        raise HTTPException(status_code=404, detail="no_relevant_context")
+        RAG_RETRIEVAL_COUNT.labels(result="no_context").inc()
+        raise HTTPException(
+            status_code=404,
+            detail="no_relevant_context",
+        )
 
-    return RAGResponse(answer=context_text, source_file=filename)
+    RAG_RETRIEVAL_COUNT.labels(result="success").inc()
+    return RAGResponse(context=context_text, source_file=filename)
 
 def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunks:int):
     """Retrieve top-k FAISS chunks for a question."""
@@ -217,11 +213,6 @@ def rank_and_limit(docs_with_scores, nbr_chunks, grades):
             chosen_ids.add(id(item))
 
     return sorted(selected, key=lambda item: item[1])
-
-def normalize_text(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text.lower())
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 def detect_domain_from_grades(grades: list[str]) -> list[str]:
     domains = []
