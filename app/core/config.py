@@ -1,15 +1,10 @@
-# app/core/config.py
-
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-ENV_FILE = BASE_DIR / ".env.dev"
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "dev").lower()
-RAG_MAX_L2_DISTANCE = os.getenv("RAG_MAX_L2_DISTANCE")
-SERVICE_TOKEN = os.getenv("SERVICE_TOKEN")
 
 ENV_FILES = {
     "dev": ".env.dev",
@@ -25,6 +20,9 @@ env_path = BASE_DIR / env_file
 if env_path.exists():
     load_dotenv(env_path, override=False)
 
+# Read settings after dotenv has loaded.
+RAG_MAX_L2_DISTANCE = os.getenv("RAG_MAX_L2_DISTANCE")
+SERVICE_TOKEN = os.getenv("SERVICE_TOKEN")
 
 raw_index_folder = os.getenv(
     "RAG_INDEX_FOLDER",
