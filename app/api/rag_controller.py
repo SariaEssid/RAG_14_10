@@ -3,37 +3,30 @@ app/api/rag_controller.py
 
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
-from pathlib import Path
-from fastapi import Request
-from dotenv import load_dotenv
+import logging
+import os
+import secrets
 
+from fastapi import APIRouter
+from fastapi import Depends, HTTPException
+from fastapi import Request
+from fastapi.security import APIKeyHeader
+
+from app.core.config import RAG_MAX_L2_DISTANCE
 from app.models.request_models import RAGRequest
 from app.models.response_models import RAGResponse
 from app.services.metrics import RAG_RETRIEVAL_COUNT
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = PROJECT_ROOT / ".env.dev"
-
-# Load .env.dev before reading or validating environment variables
-load_dotenv(dotenv_path=ENV_FILE, override=False)
-
-import os
-import secrets
-import re
-import unicodedata
-
-from fastapi import APIRouter
 from app.services.vector_store import get_vector_store
-
-from fastapi import Depends, HTTPException
-from fastapi.security import APIKeyHeader
 
 service_token_header = APIKeyHeader(name="X-Service-Token")
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 def get_max_l2_distance():
     """Return the configured maximum FAISS L2 distance, or None if disabled."""
-    raw_value = os.getenv("RAG_MAX_L2_DISTANCE")
+    raw_value = RAG_MAX_L2_DISTANCE
+
+    log.info(f"raw_value : {raw_value}")
 
     # Leave the threshold disabled until it has been calibrated.
     if raw_value is None or not raw_value.strip():

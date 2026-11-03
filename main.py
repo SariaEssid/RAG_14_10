@@ -1,72 +1,73 @@
-
 """
 app/main.py
 
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
 
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, HTTPException, Request, Response, status
 
-from app.api.rag_controller import load_service_token, get_max_l2_distance
-from app.api.rag_controller import router
+from app.api.rag_controller import router, load_service_token, get_max_l2_distance
+from app.services.metrics import (
+    REQUEST_COUNT,
+    REQUEST_LATENCY,
+    get_metrics,
+)
 from app.services.vector_store import (
     RAG_INDEX_FOLDER,
+    get_vector_store,
     validate_embedding_manifest,
 )
-from app.services.vector_store import get_vector_store
 
-app = FastAPI(title="LangChain RAG Service")
 
-app.include_router(router)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.service_token = load_service_token()  # fail fast if auth is not configured
+    app.state.service_token = load_service_token()  # fail fast if RASA_RAG_TOKEN is missing
     get_max_l2_distance()                           # fail fast on an invalid threshold
-    get_vector_store()                              # warm-up: loads the index and embedder
+    get_vector_store()                              # warm-up: loads FAISS index and embedder
     yield
+
 
 app = FastAPI(title="LangChain RAG Service", lifespan=lifespan)
 app.include_router(router)
 
+
+@app.middleware("http")
+async def collect_http_metrics(request: Request, call_next):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start_time
+
+    # Use the route template to avoid unbounded label cardinality
+    route = request.scope.get("route")
+    endpoint = getattr(route, "path", request.url.path)
+
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=endpoint,
+        status_code=str(response.status_code),
+    ).inc()
+    REQUEST_LATENCY.labels(method=request.method, endpoint=endpoint).observe(duration)
+
+    return response
+
+
 @app.get("/health", include_in_schema=False)
 async def health():
-    """
-    Liveness probe.
-    Confirms that the application process is running.
-    Does not load FAISS or initialize embeddings.
-    """
-    return {
-        "status": "alive",
-        "service": "langchain-rag-service",
-    }
+    """Liveness probe: the process is running. Does not touch FAISS."""
+    return {"status": "alive", "service": "langchain-rag-service"}
 
 
 @app.get("/ready", include_in_schema=False)
 async def readiness():
-    """
-    Readiness probe.
-    Validates FAISS artifacts and embedding configuration.
-    Does not load FAISS or initialize embeddings.
-    """
-
+    """Readiness probe: FAISS artifacts exist and embedding config is valid."""
     index_folder = Path(RAG_INDEX_FOLDER)
+    required_files = ["embedding_manifest.json", "index.faiss", "index.pkl"]
 
-    required_files = [
-        "embedding_manifest.json",
-        "index.faiss",
-        "index.pkl",
-    ]
-
-    missing_files = [
-        filename
-        for filename in required_files
-        if not (index_folder / filename).is_file()
-    ]
-
+    missing_files = [f for f in required_files if not (index_folder / f).is_file()]
     if missing_files:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -79,7 +80,6 @@ async def readiness():
 
     try:
         validate_embedding_manifest(str(index_folder))
-
     except (RuntimeError, ValueError, OSError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -97,13 +97,7 @@ async def readiness():
     }
 
 
-@app.get(
-    "/metrics",
-    response_class=PlainTextResponse,
-    include_in_schema=False,
-)
+@app.get("/metrics", include_in_schema=False)
 async def metrics():
-    return PlainTextResponse(
-        "# LangChain RAG Service\n",
-        media_type="text/plain; version=0.0.4",
-    )
+    content, content_type = get_metrics()
+    return Response(content=content, media_type=content_type)

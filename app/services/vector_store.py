@@ -5,13 +5,13 @@ app/services/vector_store.py
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
 
+import json
 import logging
 import os
-from threading import Lock
-import json
 from pathlib import Path
+from threading import Lock
+
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.academic_rag.langchain_embedding_loader import get_embedder
 from app.config import EMBEDDING_MODEL, PROJECT_ROOT, NORMALIZE_EMBEDDINGS, QUERY_PREFIX, PASSAGE_PREFIX
@@ -40,7 +40,7 @@ def get_vector_store():
         loaded_index = FAISS.load_local(
             RAG_INDEX_FOLDER,
             embeddings,
-            allow_dangerous_deserialization=True,
+            allow_dangerous_deserialization=True # GUARANTED never load untrusted files
         )
 
         _index = loaded_index

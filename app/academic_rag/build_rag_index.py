@@ -12,7 +12,6 @@ import pickle
 import sys
 from datetime import datetime
 
-from dotenv import load_dotenv
 from langchain_community.vectorstores import FAISS
 
 from app.academic_rag.langchain_embedding_loader import get_embedder
@@ -31,9 +30,6 @@ log = logging.getLogger(__name__)
 
 # Make sure Python can find the actions package
 sys.path.append(PROJECT_ROOT)
-
-# Charge les variables du fichier .env
-load_dotenv()
 
 # Paths
 RAG_INDEX_FOLDER = os.path.join(PROJECT_ROOT, "faiss_index_rag")
