@@ -15,10 +15,9 @@ from langchain_community.vectorstores import FAISS
 
 from app.academic_rag.langchain_embedding_loader import get_embedder
 from app.config import EMBEDDING_MODEL, PROJECT_ROOT, NORMALIZE_EMBEDDINGS, QUERY_PREFIX, PASSAGE_PREFIX
+from app.core.config import RAG_INDEX_FOLDER
 
 log = logging.getLogger(__name__)
-
-RAG_INDEX_FOLDER = os.path.join(PROJECT_ROOT, "faiss_index_rag")
 
 _index = None
 _index_lock = Lock()

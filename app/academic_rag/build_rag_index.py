@@ -25,6 +25,7 @@ from app.config import (
     PASSAGE_PREFIX,
     PROJECT_ROOT
 )
+from app.core.config import RAG_INDEX_FOLDER
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +33,6 @@ log = logging.getLogger(__name__)
 sys.path.append(PROJECT_ROOT)
 
 # Paths
-RAG_INDEX_FOLDER = os.path.join(PROJECT_ROOT, "faiss_index_rag")
 os.makedirs(RAG_INDEX_FOLDER, exist_ok=True)  # Ensure folder exists
 META_FILE = os.path.join(RAG_INDEX_FOLDER, "metadata.pkl")  # Metadata file
 
