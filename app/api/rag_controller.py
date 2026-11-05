@@ -208,27 +208,45 @@ def rank_and_limit(docs_with_scores, nbr_chunks, grades):
 
     return sorted(selected, key=lambda item: item[1])
 
+GRADE_TO_DOMAIN = {
+    "ef": "ef",
+    "efa": "ef",
+    "efs": "ef",
+    "efm": "ef",
+    "elcc": "elcc",
+    "elcc1": "elcc",
+    "elcc2": "elcc",
+}
+
 def detect_domain_from_grades(grades: list[str]) -> list[str]:
-    domains = []
-
-    if any(grade.lower().startswith("ef") for grade in grades):
-        domains.append("ef")
-
-    if any(grade.lower().startswith("elcc") for grade in grades):
-        domains.append("elcc")
-
-    return domains
+    return list(dict.fromkeys(
+        GRADE_TO_DOMAIN[grade.lower()]
+        for grade in grades
+        if grade.lower() in GRADE_TO_DOMAIN
+    ))
 
 def get_docs_with_scores(domains, question, index, docs_with_scores):
-    if domains:
-        for domain in domains:
-            extra_docs = search_with_scores(
-                index,
-                question,
-                2,
-                {"domain": domain},
-            )
-            print(f"######################## extra_doc - relationship : {extra_docs}")
-            docs_with_scores.extend(extra_docs)
+    if not domains:
+        return docs_with_scores
+
+    seen = {
+        (doc.page_content, doc.metadata.get("source"))
+        for doc, _ in docs_with_scores
+    }
+
+    for domain in domains:
+        extra_docs = search_with_scores(
+            index,
+            question,
+            2,
+            {"domain": domain},
+        )
+
+        for doc, score in extra_docs:
+            key = (doc.page_content, doc.metadata.get("source"))
+
+            if key not in seen:
+                docs_with_scores.append((doc, score))
+                seen.add(key)
 
     return docs_with_scores

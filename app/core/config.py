@@ -1,3 +1,10 @@
+
+"""
+app/core/config.py
+
+@author ESSID Saria | Copyright (c) 2025. ESPRIT
+"""
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv

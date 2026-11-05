@@ -1,3 +1,9 @@
+"""
+tests/unit/test_main.py
+
+@author ESSID Saria | Copyright (c) 2025. ESPRIT
+"""
+
 from fastapi.testclient import TestClient
 from app.main import app
 

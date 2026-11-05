@@ -1,5 +1,7 @@
 """
 tests/unit/test_langchain_embedding_loader.py
+
+@author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
 
 from unittest.mock import patch

@@ -1,4 +1,9 @@
-"""Unit tests for the RAG controller."""
+"""
+tests/unit/test_rag_controller.py
+
+@author ESSID Saria | Copyright (c) 2025. ESPRIT
+"""
+
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
