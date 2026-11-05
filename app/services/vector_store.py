@@ -7,15 +7,21 @@ app/services/vector_store.py
 
 import json
 import logging
-import os
 from pathlib import Path
 from threading import Lock
 
 from langchain_community.vectorstores import FAISS
 
 from app.academic_rag.langchain_embedding_loader import get_embedder
-from app.config import EMBEDDING_MODEL, PROJECT_ROOT, NORMALIZE_EMBEDDINGS, QUERY_PREFIX, PASSAGE_PREFIX
+from app.config import (
+    EMBEDDING_MODEL,
+    NORMALIZE_EMBEDDINGS,
+    PASSAGE_PREFIX,
+    PROJECT_ROOT,
+    QUERY_PREFIX,
+)
 from app.core.config import RAG_INDEX_FOLDER
+
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +30,8 @@ _index_lock = Lock()
 
 
 def get_vector_store():
+    """Load the FAISS index once, using thread-safe lazy initialization."""
+
     global _index
 
     if _index is not None:
@@ -34,23 +42,31 @@ def get_vector_store():
             return _index
 
         validate_embedding_manifest(RAG_INDEX_FOLDER)
+
         embeddings = get_embedder()
 
         loaded_index = FAISS.load_local(
             RAG_INDEX_FOLDER,
             embeddings,
-            allow_dangerous_deserialization=True # GUARANTED never load untrusted files
+            allow_dangerous_deserialization=True,
         )
 
         _index = loaded_index
+
+        log.info("FAISS vector store loaded successfully.")
+
         return _index
+
 
 def validate_embedding_manifest(index_folder: str) -> None:
     """
     Validate the embedding configuration stored alongside the FAISS index.
 
     This function does not load FAISS or initialize the embedding model.
-    Raises ValueError or FileNotFoundError if validation fails.
+
+    Raises:
+        FileNotFoundError: If the manifest does not exist.
+        ValueError: If its content is invalid or incompatible.
     """
 
     manifest_path = Path(index_folder) / "embedding_manifest.json"
@@ -70,7 +86,9 @@ def validate_embedding_manifest(index_folder: str) -> None:
         ) from exc
 
     if not isinstance(manifest, dict):
-        raise ValueError("Embedding manifest must be a JSON object.")
+        raise ValueError(
+            "Embedding manifest must be a JSON object."
+        )
 
     expected = {
         "embedding_model": EMBEDDING_MODEL,

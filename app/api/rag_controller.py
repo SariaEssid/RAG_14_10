@@ -3,6 +3,7 @@ app/api/rag_controller.py
 
 @author ESSID Saria | Copyright (c) 2025. ESPRIT
 """
+
 import logging
 import os
 import secrets
