@@ -23,27 +23,19 @@ service_token_header = APIKeyHeader(name="X-Service-Token")
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-def get_max_l2_distance():
-    """Return the configured maximum FAISS L2 distance, or None if disabled."""
+def get_max_l2_distance() -> float:
     raw_value = RAG_MAX_L2_DISTANCE
 
-    log.info(f"raw_value : {raw_value}")
-
-    # Leave the threshold disabled until it has been calibrated.
     if raw_value is None or not raw_value.strip():
-        return None
+        raise RuntimeError("RAG_MAX_L2_DISTANCE must be configured")
 
     try:
         threshold = float(raw_value)
     except ValueError:
-        raise ValueError(
-            "RAG_MAX_L2_DISTANCE must be a valid number."
-        ) from None
+        raise RuntimeError("RAG_MAX_L2_DISTANCE must be a valid number") from None
 
     if threshold < 0:
-        raise ValueError(
-            "RAG_MAX_L2_DISTANCE must be non-negative."
-        )
+        raise RuntimeError("RAG_MAX_L2_DISTANCE must be non-negative")
 
     return threshold
 
@@ -114,9 +106,10 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
                 search_with_scores(index, question, nbr_chunks, {"grade": grade})
             )
 
-        domains = detect_domain_from_grades(grades)
+        docs_with_scores = get_docs_with_scores(
+            grades, question, index, docs_with_scores
+        )
         print(f"######################## domains : {domains}")
-        docs_with_scores = get_docs_with_scores(domains, question, index, docs_with_scores)
     elif not grades and domains:
         print("💖 ######################## -GRADE | +DOMAIN")
         for domain in domains:
@@ -146,6 +139,20 @@ def load_lang_chain_context(question: str, domains: list, grades:list, nbr_chunk
         nbr_chunks,
         grades
     )
+
+    # This is a fail-closed check: an unexpected grade cannot silently enter the LLM context.
+    if grades:
+        invalid_docs = [
+            doc.metadata.get("grade")
+            for doc, _ in docs_with_scores
+            if doc.metadata.get("grade") not in grades
+        ]
+
+        if invalid_docs:
+            raise ValueError(
+                "Grade isolation violation: "
+                f"requested={grades}, unexpected={invalid_docs}"
+            )
 
     contexts = []
     print("\n💖   💖   💖   Question : " + question)
@@ -180,28 +187,57 @@ def search_with_scores(index, question, k, metadata_filter=None):
     return list(index.similarity_search_with_score(question, **search_kwargs))
 
 def rank_and_limit(docs_with_scores, nbr_chunks, grades):
-    """Deduplicate, keep the best chunk of each requested grade, then fill by distance."""
-    unique_docs, seen = [], set()
+    """Deduplicate, enforce grade isolation, then rank and limit."""
+
+    allowed_grades = set(grades or [])
+
+    unique_docs = []
+    seen = set()
+
     for doc, score in docs_with_scores:
-        key = (doc.metadata.get("file", "unknown"), " ".join(doc.page_content.split()))
+
+        # Strict grade isolation.
+        if allowed_grades:
+            if doc.metadata.get("grade") not in allowed_grades:
+                continue
+
+        key = (
+            doc.metadata.get("file", "unknown"),
+            " ".join(doc.page_content.split())
+        )
+
         if key in seen:
             continue
+
         seen.add(key)
         unique_docs.append((doc, score))
 
     unique_docs.sort(key=lambda item: item[1])
 
-    selected, chosen_ids = [], set()
+    selected = []
+    chosen_ids = set()
+
+    # Guarantee at least one best chunk per requested grade
+    # when a matching document exists.
     for grade in grades or []:
-        best = next((i for i in unique_docs if i[0].metadata.get("grade") == grade), None)
-        if best and id(best) not in chosen_ids:
+        best = next(
+            (
+                item for item in unique_docs
+                if item[0].metadata.get("grade") == grade
+            ),
+            None
+        )
+
+        if best is not None and id(best) not in chosen_ids:
             selected.append(best)
             chosen_ids.add(id(best))
 
     limit = max(nbr_chunks, len(selected))
+
     for item in unique_docs:
         if len(selected) >= limit:
             break
+
         if id(item) not in chosen_ids:
             selected.append(item)
             chosen_ids.add(id(item))
@@ -225,25 +261,35 @@ def detect_domain_from_grades(grades: list[str]) -> list[str]:
         if grade.lower() in GRADE_TO_DOMAIN
     ))
 
-def get_docs_with_scores(domains, question, index, docs_with_scores):
-    if not domains:
+def get_docs_with_scores(grades, question, index, docs_with_scores):
+    """Retrieve supplementary chunks without crossing grade boundaries."""
+
+    if not grades:
         return docs_with_scores
 
     seen = {
-        (doc.page_content, doc.metadata.get("source"))
+        (doc.metadata.get("file", "unknown"),
+         " ".join(doc.page_content.split()))
         for doc, _ in docs_with_scores
     }
 
-    for domain in domains:
+    for grade in grades:
         extra_docs = search_with_scores(
             index,
             question,
             2,
-            {"domain": domain},
+            {"grade": grade},
         )
 
         for doc, score in extra_docs:
-            key = (doc.page_content, doc.metadata.get("source"))
+            # Defense in depth: reject unexpected metadata.
+            if doc.metadata.get("grade") != grade:
+                continue
+
+            key = (
+                doc.metadata.get("file", "unknown"),
+                " ".join(doc.page_content.split())
+            )
 
             if key not in seen:
                 docs_with_scores.append((doc, score))

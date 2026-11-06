@@ -10,6 +10,8 @@ import random
 from collections import Counter
 from time import perf_counter
 
+from app.academic_rag.langchain_embedding_loader import get_embedder
+from app.config import EMBEDDING_MODEL
 from app.services.vector_store import get_vector_store
 
 
@@ -101,8 +103,30 @@ def benchmark(index, query, metadata_filter, fetch_k):
         "metadata_valid": metadata_valid,
     }
 
+def inspect_embedding_configuration():
+    """Inspect the production embedding configuration."""
+
+    embedder = get_embedder()
+
+    query_vector = embedder.embed_query(
+        "Quelle est la différence entre EF et EFS ?"
+    )
+
+    dimension = len(query_vector)
+
+    norm = math.sqrt(
+        sum(value * value for value in query_vector)
+    )
+
+    print("\nEMBEDDING CONFIGURATION")
+    print("-----------------------")
+    print(f"Embedding model: {EMBEDDING_MODEL}")
+    print(f"Embedding dimension: {dimension}")
+    print(f"Query vector L2 norm: {norm:.6f}")
+    print(f"Normalized: {math.isclose(norm, 1.0, rel_tol=1e-4)}")
 
 def main():
+    inspect_embedding_configuration()
     index = get_vector_store()
 
     ntotal = index.index.ntotal
